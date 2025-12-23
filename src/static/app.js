@@ -9,52 +9,58 @@ document.addEventListener("DOMContentLoaded", () => {
     messageEl.textContent = text;
   }
 
-  // Load activities and render cards + populate select
-  fetch("/activities")
-    .then((res) => {
-      if (!res.ok) throw new Error("Failed to load activities");
-      return res.json();
-    })
-    .then((data) => {
-      activitiesList.innerHTML = "";
-      Object.keys(data).forEach((name) => {
-        const a = data[name];
-        const card = document.createElement("div");
-        card.className = "activity-card";
-        card.innerHTML = `
-          <h4>${name}</h4>
-          <p>${a.description}</p>
-          <p><strong>Schedule:</strong> ${a.schedule}</p>
-          <div class="participants">
-            <h5>Participants</h5>
-            <ul></ul>
-          </div>
-        `;
-        const ul = card.querySelector(".participants ul");
-        if (Array.isArray(a.participants) && a.participants.length) {
-          a.participants.forEach((p) => {
+  function loadActivities(selected = "") {
+    fetch("/activities")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load activities");
+        return res.json();
+      })
+      .then((data) => {
+        activitiesList.innerHTML = "";
+        activitySelect.innerHTML = '<option value="">Select an activity</option>';
+        Object.keys(data).forEach((name) => {
+          const a = data[name];
+          const card = document.createElement("div");
+          card.className = "activity-card";
+          card.innerHTML = `
+            <h4>${name}</h4>
+            <p>${a.description}</p>
+            <p><strong>Schedule:</strong> ${a.schedule}</p>
+            <div class="participants">
+              <h5>Participants</h5>
+              <ul></ul>
+            </div>
+          `;
+          const ul = card.querySelector(".participants ul");
+          if (Array.isArray(a.participants) && a.participants.length) {
+            a.participants.forEach((p) => {
+              const li = document.createElement("li");
+              li.innerHTML = `${p}<span class="delete-icon" data-email="${p}" data-activity="${name}">×</span>`;
+              ul.appendChild(li);
+            });
+          } else {
             const li = document.createElement("li");
-            li.textContent = p;
+            li.textContent = "No participants yet";
+            li.className = "empty";
             ul.appendChild(li);
-          });
-        } else {
-          const li = document.createElement("li");
-          li.textContent = "No participants yet";
-          li.className = "empty";
-          ul.appendChild(li);
-        }
-        activitiesList.appendChild(card);
+          }
+          activitiesList.appendChild(card);
 
-        const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
-        activitySelect.appendChild(opt);
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          activitySelect.appendChild(opt);
+        });
+        activitySelect.value = selected;
+      })
+      .catch((err) => {
+        activitiesList.innerHTML = '<p class="error">Unable to load activities.</p>';
+        console.error(err);
       });
-    })
-    .catch((err) => {
-      activitiesList.innerHTML = '<p class="error">Unable to load activities.</p>';
-      console.error(err);
-    });
+  }
+
+  // Load activities initially
+  loadActivities();
 
   // Signup handling
   signupForm.addEventListener("submit", (e) => {
@@ -76,21 +82,38 @@ document.addEventListener("DOMContentLoaded", () => {
       })
       .then((resp) => {
         showMessage(resp.message || "Signed up", "success");
-        // update participants list in the corresponding card
-        document.querySelectorAll(".activity-card").forEach((card) => {
-          const title = card.querySelector("h4")?.textContent;
-          if (title === activity) {
-            const ul = card.querySelector(".participants ul");
-            const empty = ul.querySelector(".empty");
-            if (empty) empty.remove();
-            const li = document.createElement("li");
-            li.textContent = email;
-            ul.appendChild(li);
-          }
-        });
+        // reload activities to reflect changes, keep the selected activity
+        loadActivities(activity);
       })
       .catch((err) => {
         showMessage(err.message || "Signup failed", "error");
       });
+  });
+
+  // Delete participant handling
+  document.addEventListener("click", (e) => {
+    if (e.target.classList.contains("delete-icon")) {
+      const email = e.target.dataset.email;
+      const activity = e.target.dataset.activity;
+      showMessage("Unregistering...", "info");
+      const url = `/activities/${encodeURIComponent(activity)}/participants?email=${encodeURIComponent(email)}`;
+
+      fetch(url, { method: "DELETE" })
+        .then(async (res) => {
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Unregister failed");
+          }
+          return res.json();
+        })
+        .then((resp) => {
+          showMessage(resp.message || "Unregistered", "success");
+          // reload activities to reflect changes, keep the selected activity
+          loadActivities(activitySelect.value);
+        })
+        .catch((err) => {
+          showMessage(err.message || "Unregister failed", "error");
+        });
+    }
   });
 });
